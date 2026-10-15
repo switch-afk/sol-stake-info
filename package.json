@@ -1,0 +1,37 @@
+{
+  "name": "sol-stake-info",
+  "version": "0.1.0",
+  "description": "Inspect Solana stake accounts from your terminal: state, validator, balance and epochs",
+  "bin": {
+    "sol-stake-info": "bin/sol-stake-info.js"
+  },
+  "main": "src/cli.js",
+  "files": [
+    "bin",
+    "src",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "solana",
+    "stake",
+    "staking",
+    "cli",
+    "zero-dependency"
+  ],
+  "author": "Blue Brick",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/switch-afk/sol-stake-info.git"
+  },
+  "bugs": {
+    "url": "https://github.com/switch-afk/sol-stake-info/issues"
+  },
+  "homepage": "https://github.com/switch-afk/sol-stake-info#readme"
+}
