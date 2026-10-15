@@ -3,9 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { run } = require('../src/cli');
+const { createMockRpc, httpError, rpcError } = require('./helpers/mock-rpc');
+const fx = require('./helpers/stake-fixtures');
 const { version } = require('../package.json');
-
-const ADDRESS = 'Stake11111111111111111111111111111111111111';
 
 function sink() {
   return {
@@ -16,11 +16,21 @@ function sink() {
   };
 }
 
+function ioFor(handlers, extra = {}) {
+  const mock = createMockRpc(handlers);
+  const stdout = sink();
+  const stderr = sink();
+  const io = { stdout, stderr, fetch: mock.fetch, env: {}, sleep: async () => {}, ...extra };
+  return { io, mock, stdout, stderr };
+}
+
 test('--help prints usage and exits 0', async () => {
   const stdout = sink();
   const code = await run(['--help'], { stdout, stderr: sink() });
   assert.equal(code, 0);
   assert.match(stdout.data, /Usage:/);
+  assert.match(stdout.data, /--rpc/);
+  assert.match(stdout.data, /SOL_STAKE_INFO_RPC/);
   assert.match(stdout.data, /--json/);
 });
 
@@ -31,35 +41,85 @@ test('--version prints the package version', async () => {
   assert.equal(stdout.data.trim(), version);
 });
 
-test('usage errors exit 2, print to stderr and leave stdout empty', async () => {
-  const stdout = sink();
-  const stderr = sink();
-  const code = await run([], { stdout, stderr });
+test('usage errors exit 2, print to stderr and make no RPC call', async () => {
+  const { io, mock, stdout, stderr } = ioFor({ getAccountInfo: fx.delegatedAccount() });
+  const code = await run([], io);
   assert.equal(code, 2);
   assert.equal(stdout.data, '');
   assert.match(stderr.data, /Error: Missing stake account address/);
   assert.match(stderr.data, /Usage:/);
+  assert.equal(mock.calls.length, 0);
 });
 
-test('an invalid address exits 2', async () => {
-  const stdout = sink();
-  const stderr = sink();
-  const code = await run(['nope'], { stdout, stderr });
+test('an invalid address exits 2 without calling the RPC', async () => {
+  const { io, mock, stderr } = ioFor({ getAccountInfo: fx.delegatedAccount() });
+  const code = await run(['nope'], io);
   assert.equal(code, 2);
-  assert.equal(stdout.data, '');
   assert.match(stderr.data, /is not a valid Solana address/);
+  assert.equal(mock.calls.length, 0);
 });
 
-test('a valid address is echoed back', async () => {
-  const stdout = sink();
-  const code = await run([ADDRESS], { stdout, stderr: sink() });
+test('looks up a delegated stake account and prints it', async () => {
+  const { io, mock, stdout, stderr } = ioFor({ getAccountInfo: fx.delegatedAccount() });
+  const code = await run([fx.STAKE_ACCOUNT, '--rpc', 'https://rpc.example.com/?api-key=secret'], io);
   assert.equal(code, 0);
-  assert.match(stdout.data, /Stake account {2}Stake11111111111111111111111111111111111111/);
+  assert.equal(stderr.data, '');
+  assert.match(stdout.data, new RegExp(`Stake account {2}${fx.STAKE_ACCOUNT}`));
+  assert.match(stdout.data, /^State {10}delegated$/m);
+  assert.match(stdout.data, /^Delegated {6}1 SOL$/m);
+  assert.match(stdout.data, new RegExp(`^Validator {6}${fx.VOTER}$`, 'm'));
+  assert.match(stdout.data, /^RPC {12}rpc\.example\.com$/m);
+  assert.ok(!stdout.data.includes('secret'));
+  assert.equal(mock.calls[0].params[0], fx.STAKE_ACCOUNT);
 });
 
-test('--json prints the address as JSON', async () => {
-  const stdout = sink();
-  const code = await run([ADDRESS, '--json'], { stdout, stderr: sink() });
+test('--json prints the account as JSON', async () => {
+  const { io, stdout } = ioFor({ getAccountInfo: fx.delegatedAccount() });
+  const code = await run([fx.STAKE_ACCOUNT, '--json', '--rpc', 'https://rpc.example.com'], io);
   assert.equal(code, 0);
-  assert.deepEqual(JSON.parse(stdout.data), { address: ADDRESS });
+  const parsed = JSON.parse(stdout.data);
+  assert.equal(parsed.address, fx.STAKE_ACCOUNT);
+  assert.equal(parsed.state, 'delegated');
+  assert.equal(parsed.delegation.stake, 1000000000);
+  assert.equal(parsed.rpc, 'rpc.example.com');
+});
+
+test('SOL_STAKE_INFO_RPC is used when --rpc is not given, and --rpc wins when it is', async () => {
+  const env = { SOL_STAKE_INFO_RPC: 'https://env.example.com' };
+
+  const fromEnv = ioFor({ getAccountInfo: fx.delegatedAccount() }, { env });
+  assert.equal(await run([fx.STAKE_ACCOUNT], fromEnv.io), 0);
+  assert.equal(fromEnv.mock.calls[0].url, 'https://env.example.com');
+
+  const fromFlag = ioFor({ getAccountInfo: fx.delegatedAccount() }, { env });
+  assert.equal(await run([fx.STAKE_ACCOUNT, '--rpc', 'https://flag.example.com'], fromFlag.io), 0);
+  assert.equal(fromFlag.mock.calls[0].url, 'https://flag.example.com');
+});
+
+test('an account that does not exist exits 1 with the error on stderr', async () => {
+  const { io, stdout, stderr } = ioFor({ getAccountInfo: { context: { slot: 1 }, value: null } });
+  const code = await run([fx.STAKE_ACCOUNT], io);
+  assert.equal(code, 1);
+  assert.equal(stdout.data, '');
+  assert.match(stderr.data, /Error: No account found at/);
+});
+
+test('an account owned by another program exits 1', async () => {
+  const other = fx.wrap({ type: 'account' }, { owner: fx.STAKER });
+  const { io, stdout, stderr } = ioFor({ getAccountInfo: other });
+  const code = await run([fx.STAKE_ACCOUNT], io);
+  assert.equal(code, 1);
+  assert.equal(stdout.data, '');
+  assert.match(stderr.data, /is not a stake account/);
+});
+
+test('RPC failures exit 1 and show the hostname only', async () => {
+  const http = ioFor({ getAccountInfo: httpError(500) });
+  assert.equal(await run([fx.STAKE_ACCOUNT, '--rpc', 'https://rpc.example.com/?api-key=secret'], http.io), 1);
+  assert.match(http.stderr.data, /Error: rpc\.example\.com returned HTTP 500/);
+  assert.ok(!http.stderr.data.includes('secret'));
+
+  const rpc = ioFor({ getAccountInfo: rpcError(-32602, 'Invalid param') });
+  assert.equal(await run([fx.STAKE_ACCOUNT], rpc.io), 1);
+  assert.match(rpc.stderr.data, /Error: RPC error from .*Invalid param/);
 });
