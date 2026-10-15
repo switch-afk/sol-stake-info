@@ -9,6 +9,23 @@ class UsageError extends Error {
   }
 }
 
+function checkRpcUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new UsageError('--rpc must be a valid http(s) URL');
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new UsageError('--rpc must be a valid http(s) URL');
+  }
+  return value;
+}
+
+const VALUE_OPTIONS = {
+  '--rpc': { key: 'rpc', needs: 'a URL', parse: checkRpcUrl },
+};
+
 const FLAG_OPTIONS = {
   '--json': 'json',
 };
@@ -16,6 +33,7 @@ const FLAG_OPTIONS = {
 function parseArgs(argv) {
   const opts = {
     address: null,
+    rpc: null,
     json: false,
     help: false,
     version: false,
@@ -41,6 +59,20 @@ function parseArgs(argv) {
     } else if (FLAG_OPTIONS[name]) {
       if (inline !== null) throw new UsageError(`${name} does not take a value`);
       opts[FLAG_OPTIONS[name]] = true;
+    } else if (VALUE_OPTIONS[name]) {
+      const { key, needs, parse } = VALUE_OPTIONS[name];
+      let value = inline;
+      if (value === null) {
+        value = argv[++i];
+        if (value === undefined || value.startsWith('-')) {
+          throw new UsageError(`${name} needs ${needs}`);
+        }
+      }
+      if (value === '') {
+        throw new UsageError(`${name} needs ${needs}`);
+      }
+      if (opts[key] !== null) throw new UsageError(`${name} can only be given once`);
+      opts[key] = parse(value);
     } else if (arg.startsWith('-')) {
       throw new UsageError(`Unknown option: ${name}`);
     } else if (opts.address === null) {

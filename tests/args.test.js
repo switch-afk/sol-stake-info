@@ -9,6 +9,7 @@ const ADDRESS = 'Stake11111111111111111111111111111111111111';
 test('parses a bare address with defaults', () => {
   assert.deepEqual(parseArgs([ADDRESS]), {
     address: ADDRESS,
+    rpc: null,
     json: false,
     help: false,
     version: false,
@@ -22,6 +23,29 @@ test('parses --json before or after the address', () => {
 
 test('--json does not take a value', () => {
   assert.throws(() => parseArgs([ADDRESS, '--json=yes']), /--json does not take a value/);
+});
+
+test('parses --rpc in both forms', () => {
+  assert.equal(parseArgs([ADDRESS, '--rpc', 'https://rpc.example.com']).rpc, 'https://rpc.example.com');
+  assert.equal(parseArgs([ADDRESS, '--rpc=http://localhost:8899']).rpc, 'http://localhost:8899');
+});
+
+test('--rpc needs a value', () => {
+  assert.throws(() => parseArgs([ADDRESS, '--rpc']), /--rpc needs a URL/);
+  assert.throws(() => parseArgs([ADDRESS, '--rpc=']), /--rpc needs a URL/);
+  assert.throws(() => parseArgs([ADDRESS, '--rpc', '--json']), /--rpc needs a URL/);
+});
+
+test('--rpc must be an http(s) URL', () => {
+  assert.throws(() => parseArgs([ADDRESS, '--rpc', 'not a url']), /valid http\(s\) URL/);
+  assert.throws(() => parseArgs([ADDRESS, '--rpc', 'ftp://rpc.example.com']), /valid http\(s\) URL/);
+});
+
+test('--rpc can only be given once', () => {
+  assert.throws(
+    () => parseArgs([ADDRESS, '--rpc', 'https://a.example.com', '--rpc', 'https://b.example.com']),
+    /can only be given once/
+  );
 });
 
 test('--help and --version work in both forms, without an address', () => {
