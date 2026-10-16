@@ -46,15 +46,9 @@ function readDelegation(stake) {
   };
 }
 
-// client: { call, host } from createRpcClient
+// account: an account object from the RPC (jsonParsed), e.g. the value of getAccountInfo
 // Resolves to { address, type, lamports, rentExemptReserve, staker, withdrawer, lockup, delegation }
-async function fetchStakeAccount(client, address) {
-  const result = await client.call('getAccountInfo', [address, { encoding: 'jsonParsed' }]);
-  const account = result && result.value;
-
-  if (!account) {
-    throw new LookupError(`No account found at ${address} on ${client.host}`);
-  }
+function readStakeAccount(address, account) {
   if (account.owner !== STAKE_PROGRAM) {
     throw new LookupError(`${address} is not a stake account (owned by ${account.owner})`);
   }
@@ -83,4 +77,15 @@ async function fetchStakeAccount(client, address) {
   }
 }
 
-module.exports = { STAKE_PROGRAM, NEVER, LookupError, fetchStakeAccount };
+// client: { call, host } from createRpcClient
+async function fetchStakeAccount(client, address) {
+  const result = await client.call('getAccountInfo', [address, { encoding: 'jsonParsed' }]);
+  const account = result && result.value;
+
+  if (!account) {
+    throw new LookupError(`No account found at ${address} on ${client.host}`);
+  }
+  return readStakeAccount(address, account);
+}
+
+module.exports = { STAKE_PROGRAM, NEVER, LookupError, readStakeAccount, fetchStakeAccount };

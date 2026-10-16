@@ -5,7 +5,8 @@ const { createRpcClient, resolveRpcUrl, RpcError } = require('./rpc');
 const { fetchStakeAccount, LookupError } = require('./account');
 const { fetchEpoch, fetchStakeHistory } = require('./cluster');
 const { deriveStatus } = require('./activation');
-const { formatHuman, formatJson } = require('./format');
+const { fetchWalletStakeAccounts, buildWalletReport } = require('./wallet');
+const { formatHuman, formatJson, formatWalletHuman, formatWalletJson } = require('./format');
 const { version } = require('../package.json');
 
 const HELP = `sol-stake-info v${version}
@@ -15,17 +16,21 @@ Read-only: never signs anything.
 
 Usage:
   sol-stake-info <stake-account> [options]
+  sol-stake-info --wallet <address> [options]
 
 Options:
-  --rpc <url>    RPC endpoint (or set SOL_STAKE_INFO_RPC)
-  --json         Print machine-readable JSON
-  -h, --help     Show this help
-  -v, --version  Show the version
+  --wallet <address>  List the stake accounts a wallet controls, as staker or withdrawer
+                      (needs an RPC that allows getProgramAccounts)
+  --rpc <url>         RPC endpoint (or set SOL_STAKE_INFO_RPC)
+  --json              Print machine-readable JSON
+  -h, --help          Show this help
+  -v, --version       Show the version
 
-Exit codes: 0 found, 1 not found / not a stake account / RPC error, 2 usage error.
+Exit codes: 0 ok, 1 not found / not a stake account / RPC error, 2 usage error.
 
 Examples:
   sol-stake-info <stake-account-address>
+  sol-stake-info --wallet <wallet-address> --rpc https://your-rpc.example.com
   sol-stake-info <stake-account-address> --rpc https://api.devnet.solana.com --json
 `;
 
@@ -62,6 +67,20 @@ async function run(argv, io = {}) {
   });
 
   try {
+    if (opts.wallet) {
+      const accounts = await fetchWalletStakeAccounts(client, opts.wallet);
+      const [epoch, history] = await Promise.all([
+        fetchEpoch(client),
+        accounts.some((account) => account.delegation) ? fetchStakeHistory(client) : null,
+      ]);
+      const report = {
+        ...buildWalletReport(opts.wallet, accounts, { epoch, history, now: now() }),
+        host: client.host,
+      };
+      stdout.write(opts.json ? formatWalletJson(report) : formatWalletHuman(report));
+      return 0;
+    }
+
     const account = await fetchStakeAccount(client, opts.address);
     // The stake history is large, so only fetch it when there is a delegation to work out.
     const [epoch, history] = await Promise.all([

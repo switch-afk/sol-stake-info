@@ -9,6 +9,7 @@ const ADDRESS = 'Stake11111111111111111111111111111111111111';
 test('parses a bare address with defaults', () => {
   assert.deepEqual(parseArgs([ADDRESS]), {
     address: ADDRESS,
+    wallet: null,
     rpc: null,
     json: false,
     help: false,
@@ -48,6 +49,24 @@ test('--rpc can only be given once', () => {
   );
 });
 
+test('parses --wallet in both forms, without a stake account address', () => {
+  const opts = parseArgs(['--wallet', ADDRESS]);
+  assert.equal(opts.wallet, ADDRESS);
+  assert.equal(opts.address, null);
+  assert.equal(parseArgs([`--wallet=${ADDRESS}`, '--json']).wallet, ADDRESS);
+});
+
+test('--wallet needs a valid address and can only be given once', () => {
+  assert.throws(() => parseArgs(['--wallet']), /--wallet needs an address/);
+  assert.throws(() => parseArgs(['--wallet', '--json']), /--wallet needs an address/);
+  assert.throws(() => parseArgs(['--wallet', 'nope']), /is not a valid Solana address/);
+  assert.throws(() => parseArgs(['--wallet', ADDRESS, '--wallet', ADDRESS]), /can only be given once/);
+});
+
+test('a stake account address and --wallet cannot be combined', () => {
+  assert.throws(() => parseArgs([ADDRESS, '--wallet', ADDRESS]), /either a stake account address or --wallet/);
+});
+
 test('--help and --version work in both forms, without an address', () => {
   assert.equal(parseArgs(['--help']).help, true);
   assert.equal(parseArgs(['-h']).help, true);
@@ -57,7 +76,7 @@ test('--help and --version work in both forms, without an address', () => {
 
 test('missing address is a usage error', () => {
   assert.throws(() => parseArgs([]), UsageError);
-  assert.throws(() => parseArgs(['--json']), /Missing stake account address/);
+  assert.throws(() => parseArgs(['--json']), /Missing stake account address \(or use --wallet <address>\)/);
 });
 
 test('invalid address is a usage error', () => {
