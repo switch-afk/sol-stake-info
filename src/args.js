@@ -22,8 +22,16 @@ function checkRpcUrl(value) {
   return value;
 }
 
+function checkAddress(value) {
+  if (!isValidAddress(value)) {
+    throw new UsageError(`"${value}" is not a valid Solana address`);
+  }
+  return value;
+}
+
 const VALUE_OPTIONS = {
   '--rpc': { key: 'rpc', needs: 'a URL', parse: checkRpcUrl },
+  '--wallet': { key: 'wallet', needs: 'an address', parse: checkAddress },
 };
 
 const FLAG_OPTIONS = {
@@ -33,6 +41,7 @@ const FLAG_OPTIONS = {
 function parseArgs(argv) {
   const opts = {
     address: null,
+    wallet: null,
     rpc: null,
     json: false,
     help: false,
@@ -83,8 +92,13 @@ function parseArgs(argv) {
   }
 
   if (!opts.help && !opts.version) {
-    if (opts.address === null) throw new UsageError('Missing stake account address');
-    if (!isValidAddress(opts.address)) {
+    if (opts.address !== null && opts.wallet !== null) {
+      throw new UsageError('Give either a stake account address or --wallet, not both');
+    }
+    if (opts.address === null && opts.wallet === null) {
+      throw new UsageError('Missing stake account address (or use --wallet <address>)');
+    }
+    if (opts.address !== null && !isValidAddress(opts.address)) {
       throw new UsageError(`"${opts.address}" is not a valid Solana address`);
     }
   }
