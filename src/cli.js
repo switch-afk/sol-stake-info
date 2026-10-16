@@ -3,6 +3,8 @@
 const { parseArgs, UsageError } = require('./args');
 const { createRpcClient, resolveRpcUrl, RpcError } = require('./rpc');
 const { fetchStakeAccount, LookupError } = require('./account');
+const { fetchEpoch, fetchStakeHistory } = require('./cluster');
+const { deriveStatus } = require('./activation');
 const { formatHuman, formatJson } = require('./format');
 const { version } = require('../package.json');
 
@@ -31,6 +33,7 @@ async function run(argv, io = {}) {
   const stdout = io.stdout || process.stdout;
   const stderr = io.stderr || process.stderr;
   const env = io.env || process.env;
+  const now = io.now || (() => Math.floor(Date.now() / 1000));
 
   let opts;
   try {
@@ -59,7 +62,14 @@ async function run(argv, io = {}) {
   });
 
   try {
-    const info = { ...(await fetchStakeAccount(client, opts.address)), host: client.host };
+    const account = await fetchStakeAccount(client, opts.address);
+    // The stake history is large, so only fetch it when there is a delegation to work out.
+    const [epoch, history] = await Promise.all([
+      fetchEpoch(client),
+      account.delegation ? fetchStakeHistory(client) : null,
+    ]);
+    const status = deriveStatus(account, { epoch, history, now: now() });
+    const info = { ...account, ...status, host: client.host };
     stdout.write(opts.json ? formatJson(info) : formatHuman(info));
     return 0;
   } catch (err) {

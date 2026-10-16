@@ -7,7 +7,9 @@ const fx = require('./helpers/stake-fixtures');
 
 const DELEGATED = {
   address: fx.STAKE_ACCOUNT,
-  state: 'delegated',
+  type: 'delegated',
+  status: 'active',
+  epoch: 900,
   lamports: 1002282880,
   rentExemptReserve: 2282880,
   staker: fx.STAKER,
@@ -20,8 +22,11 @@ const DELEGATED = {
     deactivationEpoch: null,
     creditsObserved: 58685367,
   },
+  activation: { effective: 1000000000, activating: 0, deactivating: 0 },
   host: 'rpc.example.com',
 };
+
+const LOCKUP = { custodian: fx.CUSTODIAN, epoch: 900, unixTimestamp: 1796083200 };
 
 test('formatSol shows exact lamports as SOL without trailing zeros', () => {
   assert.equal(formatSol(0), '0 SOL');
@@ -40,29 +45,35 @@ test('formatUtc prints minutes in UTC', () => {
 test('formatLockup', () => {
   assert.equal(formatLockup(null), 'none');
   assert.equal(
-    formatLockup({ custodian: fx.CUSTODIAN, epoch: 900, unixTimestamp: 1796083200 }),
-    `until epoch 900 and 2026-12-01 00:00 UTC (custodian ${fx.CUSTODIAN})`
+    formatLockup({ ...LOCKUP, inForce: true }),
+    `in force until epoch 900 and 2026-12-01 00:00 UTC (custodian ${fx.CUSTODIAN})`
   );
   assert.equal(
-    formatLockup({ custodian: fx.CUSTODIAN, epoch: 900, unixTimestamp: 0 }),
-    `until epoch 900 (custodian ${fx.CUSTODIAN})`
+    formatLockup({ ...LOCKUP, inForce: false }),
+    'expired (was until epoch 900 and 2026-12-01 00:00 UTC)'
   );
   assert.equal(
-    formatLockup({ custodian: fx.CUSTODIAN, epoch: 0, unixTimestamp: 1796083200 }),
-    `until 2026-12-01 00:00 UTC (custodian ${fx.CUSTODIAN})`
+    formatLockup({ custodian: fx.CUSTODIAN, epoch: 900, unixTimestamp: 0, inForce: true }),
+    `in force until epoch 900 (custodian ${fx.CUSTODIAN})`
+  );
+  assert.equal(
+    formatLockup({ custodian: fx.CUSTODIAN, epoch: 0, unixTimestamp: 1796083200, inForce: false }),
+    'expired (was until 2026-12-01 00:00 UTC)'
   );
 });
 
-test('formatHuman for a delegated account', () => {
+test('formatHuman for an active delegated account', () => {
   assert.equal(
     formatHuman(DELEGATED),
     [
       `Stake account  ${fx.STAKE_ACCOUNT}`,
-      'State          delegated',
+      'Status         active',
+      'Current epoch  900',
       'Balance        1.00228288 SOL',
       'Delegated      1 SOL',
+      'Active         1 SOL',
       `Validator      ${fx.VOTER}`,
-      'Activated      epoch 800',
+      'Activation     epoch 800',
       'Rent reserve   0.00228288 SOL',
       `Staker         ${fx.STAKER}`,
       `Withdrawer     ${fx.WITHDRAWER}`,
@@ -73,15 +84,42 @@ test('formatHuman for a delegated account', () => {
   );
 });
 
-test('formatHuman shows the deactivation epoch when there is one', () => {
-  const info = { ...DELEGATED, delegation: { ...DELEGATED.delegation, deactivationEpoch: 812 } };
-  assert.match(formatHuman(info), /^Deactivated {4}epoch 812$/m);
+test('formatHuman shows only the non-zero activation amounts', () => {
+  const info = {
+    ...DELEGATED,
+    status: 'activating',
+    activation: { effective: 22, activating: 978, deactivating: 0 },
+  };
+  const text = formatHuman(info);
+  assert.match(text, /^Status {9}activating$/m);
+  assert.match(text, /^Active {9}0\.000000022 SOL$/m);
+  assert.match(text, /^Activating {5}0\.000000978 SOL$/m);
+  assert.ok(!text.includes('Deactivating'));
 });
 
-test('formatHuman for an initialized account has no delegation rows', () => {
-  const info = { ...DELEGATED, state: 'initialized', lamports: 2282880, delegation: null };
+test('formatHuman shows the deactivation epoch and amount', () => {
+  const info = {
+    ...DELEGATED,
+    status: 'deactivating',
+    delegation: { ...DELEGATED.delegation, deactivationEpoch: 900 },
+    activation: { effective: 1000000000, activating: 0, deactivating: 1000000000 },
+  };
   const text = formatHuman(info);
-  assert.match(text, /^State {10}initialized$/m);
+  assert.match(text, /^Deactivating {3}1 SOL$/m);
+  assert.match(text, /^Deactivation {3}epoch 900$/m);
+});
+
+test('formatHuman for an undelegated account has no delegation rows', () => {
+  const info = {
+    ...DELEGATED,
+    type: 'initialized',
+    status: 'undelegated',
+    lamports: 2282880,
+    delegation: null,
+    activation: null,
+  };
+  const text = formatHuman(info);
+  assert.match(text, /^Status {9}undelegated$/m);
   assert.ok(!text.includes('Validator'));
   assert.ok(!text.includes('Delegated'));
 });
@@ -89,11 +127,13 @@ test('formatHuman for an initialized account has no delegation rows', () => {
 test('formatHuman for an uninitialized account has no authorities', () => {
   const info = {
     ...DELEGATED,
-    state: 'uninitialized',
+    type: 'uninitialized',
+    status: 'uninitialized',
     rentExemptReserve: null,
     staker: null,
     withdrawer: null,
     delegation: null,
+    activation: null,
   };
   const text = formatHuman(info);
   assert.ok(!text.includes('Staker'));
@@ -102,14 +142,23 @@ test('formatHuman for an uninitialized account has no authorities', () => {
   assert.match(text, /^RPC {12}rpc\.example\.com$/m);
 });
 
+test('formatHuman shows a lockup that is in force', () => {
+  const info = { ...DELEGATED, lockup: { ...LOCKUP, inForce: true } };
+  assert.match(formatHuman(info), /^Lockup {9}in force until epoch 900 and 2026-12-01 00:00 UTC/m);
+});
+
 test('formatJson prints the same data with the host as rpc', () => {
   const parsed = JSON.parse(formatJson(DELEGATED));
   assert.equal(parsed.address, fx.STAKE_ACCOUNT);
-  assert.equal(parsed.state, 'delegated');
+  assert.equal(parsed.type, 'delegated');
+  assert.equal(parsed.status, 'active');
+  assert.equal(parsed.epoch, 900);
   assert.equal(parsed.lamports, 1002282880);
   assert.equal(parsed.delegation.voter, fx.VOTER);
   assert.equal(parsed.delegation.deactivationEpoch, null);
+  assert.deepEqual(parsed.activation, { effective: 1000000000, activating: 0, deactivating: 0 });
   assert.equal(parsed.lockup, null);
   assert.equal(parsed.rpc, 'rpc.example.com');
   assert.ok(!('host' in parsed));
+  assert.ok(!('state' in parsed));
 });

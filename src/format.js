@@ -25,23 +25,31 @@ function formatLockup(lockup) {
   const until = [];
   if (lockup.epoch > 0) until.push(`epoch ${lockup.epoch}`);
   if (lockup.unixTimestamp > 0) until.push(formatUtc(lockup.unixTimestamp));
-  return `until ${until.join(' and ')} (custodian ${lockup.custodian})`;
+  const range = until.join(' and ');
+  return lockup.inForce
+    ? `in force until ${range} (custodian ${lockup.custodian})`
+    : `expired (was until ${range})`;
 }
 
-// info: fetchStakeAccount(...) plus { host }
+// info: fetchStakeAccount(...) plus deriveStatus(...) plus { host }
 function formatHuman(info) {
   const rows = [
     ['Stake account', info.address],
-    ['State', info.state],
+    ['Status', info.status],
+    ['Current epoch', String(info.epoch)],
     ['Balance', formatSol(info.lamports)],
   ];
 
   const d = info.delegation;
+  const a = info.activation;
   if (d) {
     rows.push(['Delegated', formatSol(d.stake)]);
+    if (a.effective > 0) rows.push(['Active', formatSol(a.effective)]);
+    if (a.activating > 0) rows.push(['Activating', formatSol(a.activating)]);
+    if (a.deactivating > 0) rows.push(['Deactivating', formatSol(a.deactivating)]);
     rows.push(['Validator', d.voter]);
-    if (d.activationEpoch !== null) rows.push(['Activated', `epoch ${d.activationEpoch}`]);
-    if (d.deactivationEpoch !== null) rows.push(['Deactivated', `epoch ${d.deactivationEpoch}`]);
+    if (d.activationEpoch !== null) rows.push(['Activation', `epoch ${d.activationEpoch}`]);
+    if (d.deactivationEpoch !== null) rows.push(['Deactivation', `epoch ${d.deactivationEpoch}`]);
   }
 
   if (info.rentExemptReserve !== null) rows.push(['Rent reserve', formatSol(info.rentExemptReserve)]);
@@ -59,13 +67,16 @@ function formatJson(info) {
   return `${JSON.stringify(
     {
       address: info.address,
-      state: info.state,
+      type: info.type,
+      status: info.status,
+      epoch: info.epoch,
       lamports: info.lamports,
       rentExemptReserve: info.rentExemptReserve,
       staker: info.staker,
       withdrawer: info.withdrawer,
       lockup: info.lockup,
       delegation: info.delegation,
+      activation: info.activation,
       rpc: info.host,
     },
     null,

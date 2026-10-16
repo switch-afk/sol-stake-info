@@ -47,7 +47,7 @@ function readDelegation(stake) {
 }
 
 // client: { call, host } from createRpcClient
-// Resolves to { address, state, lamports, rentExemptReserve, staker, withdrawer, lockup, delegation }
+// Resolves to { address, type, lamports, rentExemptReserve, staker, withdrawer, lockup, delegation }
 async function fetchStakeAccount(client, address) {
   const result = await client.call('getAccountInfo', [address, { encoding: 'jsonParsed' }]);
   const account = result && result.value;
@@ -69,7 +69,7 @@ async function fetchStakeAccount(client, address) {
     const meta = info.meta || null;
     return {
       address,
-      state: parsed.type,
+      type: parsed.type,
       lamports: toNumber(account.lamports, 'balance'),
       rentExemptReserve: meta ? toNumber(meta.rentExemptReserve, 'rent reserve') : null,
       staker: meta ? meta.authorized.staker : null,
