@@ -10,6 +10,7 @@ const WITHDRAWER = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const VOTER = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
 const CUSTODIAN = 'Cu7NwqCXSmsR5vgGA3Vw9uYVViPi3kQvkbKByVQ8nPY9';
 const NO_CUSTODIAN = '11111111111111111111111111111111';
+const STAKE_HISTORY_SYSVAR = 'SysvarStakeHistory1111111111111111111111111';
 
 function wrap(parsed, { lamports = 1002282880, owner = STAKE_PROGRAM, program = 'stake' } = {}) {
   return {
@@ -66,8 +67,58 @@ function uninitializedAccount() {
   return wrap({ type: 'uninitialized' }, { lamports: 2282880 });
 }
 
+// getEpochInfo result
+function epochInfo(epoch = 900) {
+  return {
+    absoluteSlot: 350966785,
+    blockHeight: 340000000,
+    epoch,
+    slotIndex: 1000,
+    slotsInEpoch: 432000,
+    transactionCount: 1000000,
+  };
+}
+
+// The stake history sysvar as jsonParsed returns it.
+// entries: [{ epoch, effective, activating, deactivating }]
+function stakeHistoryAccount(entries = []) {
+  return {
+    context: { slot: 350966785 },
+    value: {
+      data: {
+        parsed: {
+          type: 'stakeHistory',
+          info: entries.map(({ epoch, effective, activating, deactivating }) => ({
+            epoch,
+            stakeHistory: { effective, activating, deactivating },
+          })),
+        },
+        program: 'sysvar',
+        space: 16392,
+      },
+      executable: false,
+      lamports: 114979200,
+      owner: 'Sysvar1111111111111111111111111111111111111',
+      rentEpoch: 18446744073709551615,
+      space: 16392,
+    },
+  };
+}
+
+// Mock RPC handlers for a whole lookup: the account, the current epoch and the stake history.
+function lookupHandlers({ account = delegatedAccount(), epoch = 900, history = [] } = {}) {
+  return {
+    getEpochInfo: epochInfo(epoch),
+    getAccountInfo: (params) => (params[0] === STAKE_HISTORY_SYSVAR ? stakeHistoryAccount(history) : account),
+  };
+}
+
 module.exports = {
   STAKE_PROGRAM,
+  STAKE_HISTORY_SYSVAR,
+  epochInfo,
+  stakeHistoryAccount,
+  lookupHandlers,
   NEVER,
   STAKE_ACCOUNT,
   STAKER,

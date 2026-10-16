@@ -24,7 +24,7 @@ test('reads a delegated stake account', async () => {
   const { client } = clientFor(fx.delegatedAccount());
   assert.deepEqual(await fetchStakeAccount(client, fx.STAKE_ACCOUNT), {
     address: fx.STAKE_ACCOUNT,
-    state: 'delegated',
+    type: 'delegated',
     lamports: 1002282880,
     rentExemptReserve: 2282880,
     staker: fx.STAKER,
@@ -49,7 +49,7 @@ test('a deactivation epoch other than "never" is kept', async () => {
 test('reads an initialized stake account that was never delegated', async () => {
   const { client } = clientFor(fx.initializedAccount());
   const info = await fetchStakeAccount(client, fx.STAKE_ACCOUNT);
-  assert.equal(info.state, 'initialized');
+  assert.equal(info.type, 'initialized');
   assert.equal(info.delegation, null);
   assert.equal(info.staker, fx.STAKER);
   assert.equal(info.lamports, 2282880);
@@ -58,7 +58,7 @@ test('reads an initialized stake account that was never delegated', async () => 
 test('reads an uninitialized stake account', async () => {
   const { client } = clientFor(fx.uninitializedAccount());
   const info = await fetchStakeAccount(client, fx.STAKE_ACCOUNT);
-  assert.equal(info.state, 'uninitialized');
+  assert.equal(info.type, 'uninitialized');
   assert.equal(info.staker, null);
   assert.equal(info.rentExemptReserve, null);
   assert.equal(info.lockup, null);
